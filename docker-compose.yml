@@ -1,14 +1,10 @@
 services:
-  yhoro-website:
-    image: ghcr.io/youssef-horo/website:${IMAGE_TAG:-1.5.0}
-    container_name: yhoro-website
+  cv-template:
+    image: nextjs-cv-template:${IMAGE_TAG:-latest}
+    container_name: cv-template
     environment:
       - NODE_ENV=production
     restart: unless-stopped
-    networks:
-      - nginxproxymanager_default
-
-networks:
-  nginxproxymanager_default:
-    external: true
+    ports:
+      - "8080:8080"
 

@@ -1,6 +1,6 @@
 # Deployment Guide
 
-This guide covers Docker deployment, Nginx Proxy Manager integration, and CI/CD setup.
+This guide covers Docker deployment and CI/CD setup for the CV template.
 
 ## Docker
 
@@ -30,20 +30,20 @@ The script will:
 
 **Manual build:**
 ```bash
-docker build -t yhoro-website .
-docker run -d -p 8080:8080 --name yhoro-website yhoro-website
+docker build -t nextjs-cv-template .
+docker run -d -p 8080:8080 --name cv-template nextjs-cv-template
 ```
 
 **Using build script:**
 ```bash
 ./build.sh
-docker run -d -p 8080:8080 --name yhoro-website yhoro-website:latest
+docker run -d -p 8080:8080 --name cv-template nextjs-cv-template:latest
 ```
 
 **Flags:**
 - `-d` - Run container in detached mode (background)
 - `-p 8080:8080` - Map port 8080
-- `--name yhoro-website` - Give container a name for easier management
+- `--name cv-template` - Give container a name for easier management
 
 ### Using Docker Compose
 
@@ -67,97 +67,7 @@ docker compose up -d
 
 The site will be available at [http://localhost:8080](http://localhost:8080).
 
-## Integration with Nginx Proxy Manager
-
-If you're using Nginx Proxy Manager (NPM) as a reverse proxy, you need to connect the container to the same Docker network as NPM.
-
-### Step 1: Find the NPM Network Name
-
-```bash
-docker network ls
-```
-
-Look for a network like `nginxproxymanager_default`, `npm_default`, or similar.
-
-### Step 2: Run Container in NPM Network
-
-**Option A: Using docker run**
-
-```bash
-docker run -d \
-  --name yhoro-website \
-  --network nginxproxymanager_default \
-  yhoro-website
-```
-
-Replace `nginxproxymanager_default` with your actual NPM network name.
-
-**Option B: Using docker compose**
-
-1. Build the image (with optional tag):
-```bash
-./build.sh
-# Or with custom tag:
-IMAGE_TAG=v1.0.0 ./build.sh
-```
-
-2. Start the container:
-```bash
-docker compose up -d
-# Or with custom tag:
-IMAGE_TAG=v1.0.0 docker compose up -d
-```
-
-The `docker-compose.yml` automatically uses the `IMAGE_TAG` environment variable if set, otherwise defaults to `latest`.
-
-### Step 3: Configure Nginx Proxy Manager
-
-1. Log in to Nginx Proxy Manager web interface
-2. Go to **Hosts** → **Proxy Hosts** → **Add Proxy Host**
-3. Configure:
-   - **Domain Names:** Your domain (e.g., `cv.yhoro.de`)
-   - **Forward Hostname/IP:** `yhoro-website` (container name, not localhost!)
-   - **Forward Port:** `8080`
-   - **Forward Scheme:** `http`
-   - **Cache Assets:** Enable if desired
-   - **Block Common Exploits:** Enable
-   - **Websockets Support:** Enable if needed
-
-4. **SSL/HTTPS:** Go to the **SSL** tab and configure your SSL certificate
-
-### Troubleshooting 502 Bad Gateway
-
-If you get a 502 Bad Gateway error:
-
-1. **Check if container is running:**
-   ```bash
-   docker ps | grep yhoro-website
-   ```
-
-2. **Check container logs:**
-   ```bash
-   docker logs yhoro-website
-   ```
-
-3. **Verify network connectivity:**
-   ```bash
-   # Find NPM container name
-   docker ps | grep nginx-proxy-manager
-   
-   # Test connectivity from NPM container
-   docker exec -it <npm-container-name> ping yhoro-website
-   ```
-
-4. **Verify network membership:**
-   ```bash
-   docker inspect yhoro-website | grep -A 10 Networks
-   ```
-
-5. **Common issues:**
-   - Container not in the same network → Add `--network <npm-network-name>`
-   - Wrong hostname in NPM → Use container name `yhoro-website`, not `localhost`
-   - Container not running → Check with `docker ps`
-   - Port mismatch → Verify container listens on port 8080
+You can also place this container behind any reverse proxy (e.g., Nginx, Traefik) as a normal HTTP service on port 8080.
 
 ## Container Management
 
@@ -219,7 +129,7 @@ GitHub Actions provides a complete CI/CD pipeline that runs on every push and pu
 
 **Note:** `ghcr.io` is GitHub's Container Registry - it's part of GitHub, just a separate service. Your images are stored in your GitHub account, accessible through the GitHub Packages feature.
 
-**Full Image Path:** `ghcr.io/youssef-horo/website:latest`
+**Full Image Path (example):** `ghcr.io/<your-username>/nextjs-cv-template:latest`
 
 **Visibility:** 
 - Images are stored as **private** by default
@@ -245,7 +155,7 @@ docker pull ghcr.io/youssef-horo/website:v1.0.0
 **Access via GitHub UI:**
 - Go to your GitHub repository
 - Click on "Packages" in the right sidebar
-- Or go to: `https://github.com/users/youssef-horo/packages/container/package/website`
+- Or go to: `https://github.com/users/<your-username>/packages/container/package/nextjs-cv-template`
 
 #### How to use:
 

@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# Build script for yhoro-website Docker image
+# Build script for the Next.js CV template Docker image
 # Uses IMAGE_TAG environment variable, defaults to 'latest' if not set
 
 set -e
 
-IMAGE_NAME="yhoro-website"
+IMAGE_NAME="nextjs-cv-template"
 IMAGE_TAG="${IMAGE_TAG:-latest}"
 FULL_IMAGE_NAME="${IMAGE_NAME}:${IMAGE_TAG}"
 
