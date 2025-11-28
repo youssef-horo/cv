@@ -1,0 +1,5 @@
+Contact: mailto:yhoro@yhoro.de
+Expires: 2026-12-31T23:59:59.000Z
+Preferred-Languages: en, de
+Canonical: https://yhoro.de/.well-known/security.txt
+

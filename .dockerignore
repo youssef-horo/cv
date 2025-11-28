@@ -1,0 +1,56 @@
+# Build artifacts
+.next
+node_modules
+npm-debug.log
+*.log
+
+# Git
+.git
+.gitignore
+.gitlab-ci.yml
+
+# Documentation
+README.md
+*.md
+docs/
+CHANGELOG.md
+
+# IDE
+.vscode/
+.idea/
+.DS_Store
+
+# Environment
+.env*
+.env.local
+.env.*.local
+
+# Testing
+*.test.ts
+*.test.tsx
+__tests__/
+coverage/
+.vitest/
+vitest.config.mjs
+src/test/
+
+# Config files not needed in production
+.eslintrc.json
+# Note: tailwind.config.js and postcss.config.js are NEEDED for the build process
+# They are used during npm run build to compile CSS, so they must NOT be in .dockerignore
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+
+# Docker
+Dockerfile
+.dockerignore
+docker-compose.yml
+build.sh
+
+# Other
+*.swp
+*.swo
+*~
+

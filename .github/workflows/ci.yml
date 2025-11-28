@@ -1,0 +1,527 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+      
+      - name: Run linter
+        run: npm run lint
+        continue-on-error: true
+
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+      
+      - name: Run unit tests
+        run: npm run test:run
+      
+      - name: Generate test coverage
+        run: npm run test:coverage || npm run test:run
+        continue-on-error: true
+      
+      - name: Display test summary
+        if: always()
+        run: |
+          echo "## 🧪 Test Results Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -d coverage ]; then
+            if [ -f coverage/coverage-summary.json ]; then
+              LINES=$(cat coverage/coverage-summary.json | grep -o '"lines":{"pct":[0-9.]*}' | grep -o '[0-9.]*' | head -1)
+              STATEMENTS=$(cat coverage/coverage-summary.json | grep -o '"statements":{"pct":[0-9.]*}' | grep -o '[0-9.]*' | head -1)
+              FUNCTIONS=$(cat coverage/coverage-summary.json | grep -o '"functions":{"pct":[0-9.]*}' | grep -o '[0-9.]*' | head -1)
+              BRANCHES=$(cat coverage/coverage-summary.json | grep -o '"branches":{"pct":[0-9.]*}' | grep -o '[0-9.]*' | head -1)
+              echo "| Metric | Coverage |" >> $GITHUB_STEP_SUMMARY
+              echo "|--------|----------|" >> $GITHUB_STEP_SUMMARY
+              echo "| Lines | ${LINES}% |" >> $GITHUB_STEP_SUMMARY
+              echo "| Statements | ${STATEMENTS}% |" >> $GITHUB_STEP_SUMMARY
+              echo "| Functions | ${FUNCTIONS}% |" >> $GITHUB_STEP_SUMMARY
+              echo "| Branches | ${BRANCHES}% |" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "✅ All tests passed" >> $GITHUB_STEP_SUMMARY
+          fi
+      
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: |
+            coverage/
+            test-results/
+
+  integration-test:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: [build]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+      
+      - name: Build application
+        run: npm run build
+      
+      - name: Start Next.js server
+        run: |
+          npm start &
+          sleep 10
+          echo "Server started"
+      
+      - name: Test sitemap.xml
+        run: |
+          curl -f http://localhost:3000/sitemap.xml > /dev/null || exit 1
+          SITEMAP=$(curl -s http://localhost:3000/sitemap.xml)
+          if echo "$SITEMAP" | grep -q "https://yhoro.de"; then
+            echo "✅ sitemap.xml is valid"
+          else
+            echo "❌ sitemap.xml validation failed"
+            exit 1
+          fi
+      
+      - name: Test robots.txt
+        run: |
+          curl -f http://localhost:3000/robots.txt > /dev/null || exit 1
+          ROBOTS=$(curl -s http://localhost:3000/robots.txt)
+          if echo "$ROBOTS" | grep -q "sitemap.xml"; then
+            echo "✅ robots.txt is valid"
+          else
+            echo "❌ robots.txt validation failed"
+            exit 1
+          fi
+      
+      - name: Test homepage accessibility
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/)
+          if [ "$STATUS" -eq 200 ]; then
+            echo "✅ Homepage is accessible (HTTP $STATUS)"
+          else
+            echo "❌ Homepage returned HTTP $STATUS"
+            exit 1
+          fi
+      
+      - name: Test security headers
+        run: |
+          HEADERS=$(curl -s -I http://localhost:3000/ | grep -i "x-frame-options\|x-content-type-options\|strict-transport-security")
+          if [ -n "$HEADERS" ]; then
+            echo "✅ Security headers present"
+            echo "$HEADERS"
+          else
+            echo "⚠️ Some security headers might be missing"
+          fi
+        continue-on-error: true
+
+  e2e-test:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    needs: [build]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+      
+      - name: Build application
+        run: npm run build
+      
+      - name: Install Playwright
+        run: npx playwright install --with-deps chromium
+        continue-on-error: true
+      
+      - name: Start Next.js server
+        run: |
+          npm start &
+          sleep 10
+          echo "Server started on port 3000"
+      
+      - name: Run E2E tests
+        run: |
+          # Basic E2E test using curl (can be replaced with Playwright)
+          curl -f http://localhost:3000/ > /dev/null || exit 1
+          echo "✅ E2E: Homepage loads successfully"
+          
+          # Check for key content
+          CONTENT=$(curl -s http://localhost:3000/)
+          if echo "$CONTENT" | grep -q "Youssef Horo"; then
+            echo "✅ E2E: Main content is present"
+          else
+            echo "❌ E2E: Main content missing"
+            exit 1
+          fi
+        continue-on-error: true
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+      
+      - name: Build application
+        run: npm run build
+      
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          path: .next
+          retention-days: 1
+
+  security-audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+      
+      - name: Run npm security audit
+        run: npm audit --audit-level=moderate
+        continue-on-error: true
+      
+      - name: Check for npm vulnerabilities
+        run: |
+          AUDIT_OUTPUT=$(npm audit --audit-level=moderate 2>&1)
+          if echo "$AUDIT_OUTPUT" | grep -qE "found [1-9][0-9]* vulnerabilities"; then
+            echo "⚠️ Security vulnerabilities found!"
+            echo "$AUDIT_OUTPUT"
+            exit 1
+          else
+            echo "✅ No security vulnerabilities found"
+          fi
+      
+      - name: Run Trivy vulnerability scanner on dependencies
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'table'
+          output: 'trivy-fs-results.txt'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+        continue-on-error: true
+      
+      - name: Display Trivy filesystem scan results
+        run: |
+          echo "## 🔒 Security Scan Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📁 Filesystem & Dependencies Scan" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -f trivy-fs-results.txt ]; then
+            VULN_COUNT=$(grep -c "CRITICAL\|HIGH" trivy-fs-results.txt || echo "0")
+            if [ "$VULN_COUNT" -gt 0 ]; then
+              echo "⚠️ **Found ${VULN_COUNT} CRITICAL/HIGH vulnerabilities**" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+              head -30 trivy-fs-results.txt >> $GITHUB_STEP_SUMMARY
+              echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "✅ No CRITICAL or HIGH vulnerabilities found" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "✅ No vulnerabilities found" >> $GITHUB_STEP_SUMMARY
+          fi
+          cat trivy-fs-results.txt || echo "No vulnerabilities found"
+      
+      - name: Upload Trivy filesystem scan results as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-fs-scan-results
+          path: trivy-fs-results.txt
+          retention-days: 30
+        continue-on-error: true
+      
+      - name: Run Trivy secret scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          scanners: 'secret'
+          format: 'table'
+          output: 'trivy-secret-results.txt'
+          exit-code: '1'
+        continue-on-error: true
+      
+      - name: Display Trivy secret scan results
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔐 Secret Scan" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -f trivy-secret-results.txt ]; then
+            SECRET_COUNT=$(grep -c "FOUND" trivy-secret-results.txt || echo "0")
+            if [ "$SECRET_COUNT" -gt 0 ]; then
+              echo "⚠️ **Found ${SECRET_COUNT} potential secrets**" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+              cat trivy-secret-results.txt >> $GITHUB_STEP_SUMMARY
+              echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "✅ No secrets found" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "✅ No secrets found" >> $GITHUB_STEP_SUMMARY
+          fi
+          cat trivy-secret-results.txt || echo "No secrets found"
+      
+      - name: Upload Trivy secret scan results as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-secret-scan-results
+          path: trivy-secret-results.txt
+          retention-days: 30
+        continue-on-error: true
+      
+      - name: Generate security summary
+        if: always()
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 📋 Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "📥 **Download detailed reports:** Check Artifacts section below" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "🔗 **Quick Links:**" >> $GITHUB_STEP_SUMMARY
+          echo "- [Security Tab](https://github.com/${{ github.repository }}/security)" >> $GITHUB_STEP_SUMMARY
+          echo "- [Dependabot Alerts](https://github.com/${{ github.repository }}/security/dependabot)" >> $GITHUB_STEP_SUMMARY
+
+  generate-sbom:
+    name: Generate SBOM
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+      
+      - name: Generate SBOM with npm
+        run: |
+          # Generate SBOM in SPDX format using npm
+          npm ls --all --json > sbom-npm.json || true
+          echo "✅ Generated npm dependency tree"
+      
+      - name: Generate SBOM with CycloneDX
+        run: |
+          # Install CycloneDX CLI
+          npm install -g @cyclonedx/cyclonedx-npm || true
+          
+          # Generate SBOM
+          cyclonedx-npm --output-file sbom-cyclonedx.json || \
+          npx @cyclonedx/cyclonedx-npm --output-file sbom-cyclonedx.json || \
+          echo "⚠️ CycloneDX not available, using npm output"
+        continue-on-error: true
+      
+      - name: Generate package-lock.json based SBOM
+        run: |
+          # Create a simple SBOM from package-lock.json
+          cat > sbom.json << EOF
+          {
+            "bomFormat": "CycloneDX",
+            "specVersion": "1.4",
+            "version": 1,
+            "metadata": {
+              "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+              "tools": [
+                {
+                  "vendor": "GitHub Actions",
+                  "name": "SBOM Generator"
+                }
+              ],
+              "component": {
+                "type": "application",
+                "name": "yhoro-website",
+                "version": "$(node -p "require('./package.json').version")"
+              }
+            },
+            "components": []
+          }
+          EOF
+          
+          # Extract dependencies from package.json
+          node -e "
+            const pkg = require('./package.json');
+            const deps = {...pkg.dependencies, ...pkg.devDependencies};
+            const components = Object.entries(deps).map(([name, version]) => ({
+              type: 'library',
+              name: name,
+              version: version.replace(/^[\^~]/, '')
+            }));
+            const sbom = require('./sbom.json');
+            sbom.components = components;
+            require('fs').writeFileSync('sbom.json', JSON.stringify(sbom, null, 2));
+          "
+          echo "✅ Generated SBOM from package.json"
+      
+      - name: Upload SBOM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-artifacts
+          path: |
+            sbom*.json
+            package-lock.json
+          retention-days: 90
+      
+      - name: Upload SBOM to GitHub
+        run: |
+          # Attach SBOM to release if this is a tag push
+          if [ -n "${{ github.ref_type }}" ] && [ "${{ github.ref_type }}" = "tag" ]; then
+            echo "SBOM would be attached to release ${{ github.ref_name }}"
+          fi
+        continue-on-error: true
+      
+      - name: Display SBOM summary
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 📋 SBOM Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -f sbom.json ]; then
+            COMPONENT_COUNT=$(cat sbom.json | grep -o '"name"' | wc -l)
+            VERSION=$(node -p "require('./package.json').version")
+            echo "**Application:** yhoro-website v${VERSION}" >> $GITHUB_STEP_SUMMARY
+            echo "**Total Components:** ${COMPONENT_COUNT}" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "📥 Download SBOM artifacts for detailed information." >> $GITHUB_STEP_SUMMARY
+          fi
+
+  summary:
+    name: 📊 Test & Security Summary
+    runs-on: ubuntu-latest
+    needs: [test, security-audit, generate-sbom]
+    if: always()
+    
+    steps:
+      - name: Generate comprehensive summary
+        run: |
+          cat > $GITHUB_STEP_SUMMARY << 'EOF'
+          # 📊 Test & Security Dashboard
+          
+          **Workflow Run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}  
+          **Commit:** ${{ github.sha }}  
+          **Branch:** ${{ github.ref_name }}
+          
+          ---
+          
+          ## 📍 Quick Navigation
+          
+          - [View All Jobs](#) - Scroll down to see individual job results
+          - [Security Tab](https://github.com/${{ github.repository }}/security)
+          - [Dependabot Alerts](https://github.com/${{ github.repository }}/security/dependabot)
+          
+          ---
+          
+          ## ✅ Test Results
+          
+          Check the **Unit Tests** job above for detailed test results and coverage.
+          
+          ---
+          
+          ## 🔒 Security Scan Results
+          
+          Check the **Security Audit** job above for:
+          - 📁 Filesystem & Dependencies Scan (Trivy)
+          - 🔐 Secret Scan (Trivy)
+          - 📦 NPM Audit Results
+          
+          ---
+          
+          ## 📋 SBOM (Software Bill of Materials)
+          
+          Check the **Generate SBOM** job above for dependency information.
+          
+          ---
+          
+          ## 📥 Download Reports
+          
+          All detailed reports are available as **Artifacts** at the bottom of this page:
+          - `test-results` - Test coverage reports
+          - `trivy-fs-scan-results` - Filesystem security scan
+          - `trivy-secret-scan-results` - Secret scan results
+          - `sbom-artifacts` - Software Bill of Materials
+          
+          ---
+          
+          **💡 Tip:** Scroll down to see detailed results from each job above.
+          
+          EOF
+

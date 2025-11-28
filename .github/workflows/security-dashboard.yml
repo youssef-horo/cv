@@ -1,0 +1,115 @@
+name: Security & Test Dashboard
+
+on:
+  workflow_run:
+    workflows: ["CI/CD Pipeline"]
+    types:
+      - completed
+  workflow_dispatch:
+
+jobs:
+  generate-dashboard:
+    name: Generate Security & Test Dashboard
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion != 'cancelled' }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: '*'
+          merge-multiple: false
+          path: artifacts
+        continue-on-error: true
+      
+      - name: Generate comprehensive dashboard
+        run: |
+          cat > dashboard.md << 'EOF'
+          # 🔒 Security & Test Dashboard
+          
+          **Generated:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")  
+          **Workflow Run:** ${{ github.event.workflow_run.html_url || 'Manual trigger' }}
+          
+          ---
+          
+          ## 📊 Test Results
+          
+          EOF
+          
+          # Test Coverage
+          if [ -f artifacts/test-results/coverage/coverage-summary.json ]; then
+            COVERAGE=$(cat artifacts/test-results/coverage/coverage-summary.json | grep -o '"total":{[^}]*}' | grep -o '"lines":{"pct":[0-9.]*}' | grep -o '[0-9.]*' | head -1)
+            echo "### ✅ Test Coverage: ${COVERAGE}%" >> dashboard.md
+          else
+            echo "### ⚠️ Test Coverage: Not available" >> dashboard.md
+          fi
+          
+          echo "" >> dashboard.md
+          echo "---" >> dashboard.md
+          echo "" >> dashboard.md
+          echo "## 🔒 Security Scan Results" >> dashboard.md
+          echo "" >> dashboard.md
+          
+          # Trivy Filesystem Scan
+          if [ -f artifacts/trivy-fs-scan-results/trivy-fs-results.txt ]; then
+            echo "### 📁 Filesystem & Dependencies Scan" >> dashboard.md
+            echo "\`\`\`" >> dashboard.md
+            head -50 artifacts/trivy-fs-scan-results/trivy-fs-results.txt >> dashboard.md
+            echo "\`\`\`" >> dashboard.md
+            echo "" >> dashboard.md
+          fi
+          
+          # Trivy Secret Scan
+          if [ -f artifacts/trivy-secret-scan-results/trivy-secret-results.txt ]; then
+            echo "### 🔐 Secret Scan" >> dashboard.md
+            echo "\`\`\`" >> dashboard.md
+            cat artifacts/trivy-secret-scan-results/trivy-secret-results.txt >> dashboard.md
+            echo "\`\`\`" >> dashboard.md
+            echo "" >> dashboard.md
+          fi
+          
+          # NPM Audit
+          echo "### 📦 NPM Audit" >> dashboard.md
+          echo "Check the Security Audit job logs for npm audit results." >> dashboard.md
+          echo "" >> dashboard.md
+          
+          echo "---" >> dashboard.md
+          echo "" >> dashboard.md
+          echo "## 📋 SBOM (Software Bill of Materials)" >> dashboard.md
+          echo "" >> dashboard.md
+          
+          if [ -f artifacts/sbom-artifacts/sbom.json ]; then
+            COMPONENT_COUNT=$(cat artifacts/sbom-artifacts/sbom.json | grep -o '"name"' | wc -l)
+            echo "**Total Components:** ${COMPONENT_COUNT}" >> dashboard.md
+            echo "" >> dashboard.md
+            echo "Download SBOM artifacts for detailed information." >> dashboard.md
+          else
+            echo "SBOM files not available in this run." >> dashboard.md
+          fi
+          
+          echo "" >> dashboard.md
+          echo "---" >> dashboard.md
+          echo "" >> dashboard.md
+          echo "## 📍 Quick Links" >> dashboard.md
+          echo "" >> dashboard.md
+          echo "- [View Full Workflow Run](${{ github.event.workflow_run.html_url }})" >> dashboard.md
+          echo "- [Security Tab](https://github.com/${{ github.repository }}/security)" >> dashboard.md
+          echo "- [All Workflows](https://github.com/${{ github.repository }}/actions)" >> dashboard.md
+          
+          cat dashboard.md
+      
+      - name: Create Dashboard Summary
+        run: |
+          cat dashboard.md >> $GITHUB_STEP_SUMMARY
+      
+      - name: Upload Dashboard
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-test-dashboard
+          path: dashboard.md
+          retention-days: 90
+
+

@@ -1,0 +1,45 @@
+name: Clear Cache
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Run weekly on Sunday at 2 AM UTC
+    - cron: '0 2 * * 0'
+
+jobs:
+  clear-cache:
+    name: Clear GitHub Actions Cache
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    
+    steps:
+      - name: Clear GitHub Actions Cache
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const caches = await github.rest.actions.getActionsCacheList({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 100
+            });
+            
+            console.log(`Found ${caches.data.actions_caches.length} cache entries`);
+            
+            for (const cache of caches.data.actions_caches) {
+              console.log(`Deleting cache: ${cache.key} (${cache.size_in_bytes} bytes)`);
+              try {
+                await github.rest.actions.deleteActionsCacheById({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  cache_id: cache.id
+                });
+                console.log(`✅ Deleted cache: ${cache.key}`);
+              } catch (error) {
+                console.log(`❌ Failed to delete cache: ${cache.key} - ${error.message}`);
+              }
+            }
+            
+            console.log('✅ Cache cleanup completed');
+

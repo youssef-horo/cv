@@ -1,0 +1,44 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Ensure emojis are rendered correctly */
+@layer base {
+  body {
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+    scroll-behavior: smooth;
+  }
+}
+
+/* Print styles for CV export */
+@media print {
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+
+  html,
+  body {
+    background: #ffffff !important;
+  }
+
+  body {
+    margin: 0;
+  }
+
+  /* Elemente nur für Bildschirm (Buttons etc.) */
+  .screen-only {
+    display: none !important;
+  }
+
+  /* CV-Seitencontainer ohne Schatten/Rundung drucken */
+  .print-page {
+    box-shadow: none !important;
+    margin: 0 auto;
+  }
+
+/* Während des PDF-Exports (html2pdf) Buttons ausblenden */
+.cv-exporting .screen-only {
+  display: none !important;
+}
+}

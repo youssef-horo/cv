@@ -1,0 +1,60 @@
+name: Cleanup Untagged Packages
+
+on:
+  workflow_dispatch: # Allows manual triggering
+  schedule:
+    # Run every Sunday at 3 AM UTC
+    - cron: '0 3 * * 0'
+
+jobs:
+  cleanup:
+    name: Delete Untagged Packages
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      contents: read
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup GitHub CLI
+        run: |
+          gh --version || (echo "GitHub CLI not found, installing..." && type -p curl >/dev/null || (apt-get update && apt-get install -y curl))
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+          chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+          apt-get update && apt-get install -y gh
+        continue-on-error: true
+      
+      - name: Delete untagged packages
+        run: |
+          PACKAGE_NAME="website"
+          OWNER="${{ github.repository_owner }}"
+          
+          echo "Fetching package versions for $OWNER/$PACKAGE_NAME..."
+          
+          # Try user endpoint first, then org endpoint
+          VERSIONS=$(gh api /users/$OWNER/packages/container/$PACKAGE_NAME/versions --jq '.[] | select(.metadata.container.tags | length == 0) | .id' 2>/dev/null || \
+                     gh api /orgs/$OWNER/packages/container/$PACKAGE_NAME/versions --jq '.[] | select(.metadata.container.tags | length == 0) | .id' 2>/dev/null || echo "")
+          
+          if [ -z "$VERSIONS" ]; then
+            echo "✅ No untagged packages found"
+            exit 0
+          fi
+          
+          echo "Found untagged package versions:"
+          echo "$VERSIONS"
+          
+          # Delete each untagged version (try user endpoint first, then org)
+          for VERSION_ID in $VERSIONS; do
+            echo "Deleting version ID: $VERSION_ID"
+            gh api /users/$OWNER/packages/container/$PACKAGE_NAME/versions/$VERSION_ID -X DELETE 2>/dev/null || \
+            gh api /orgs/$OWNER/packages/container/$PACKAGE_NAME/versions/$VERSION_ID -X DELETE 2>/dev/null || \
+            echo "Failed to delete version $VERSION_ID"
+          done
+          
+          echo "✅ Cleanup complete"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
