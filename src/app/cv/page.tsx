@@ -1,7 +1,7 @@
 "use client";
 
 import { Poppins } from "next/font/google";
-import { translations } from "../page";
+import { translations } from "../translations";
 
 const poppins = Poppins({
   subsets: ["latin"],
@@ -38,7 +38,10 @@ export default function CvPage() {
         });
       }
     } else {
-      acc.push(section);
+      acc.push({
+        title: section.title,
+        items: [...section.items],
+      });
     }
     return acc;
   }, [] as Array<{ title: string; items: string[] }>);
